@@ -1,23 +1,47 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { SESSION_COOKIE, verifySessionToken } from "@/app/lib/auth";
 
-export function proxy(request: NextRequest) {
-  const response = NextResponse.next();
+const PUBLIC_PATHS = [
+  "/unlock",
+  "/api/auth/login",
+  "/api/auth/logout",
+];
 
-  response.headers.set("X-Frame-Options", "DENY");
-  response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+function isPublicPath(pathname: string) {
+  if (PUBLIC_PATHS.includes(pathname)) return true;
 
-  if (request.nextUrl.pathname.startsWith("/api/")) {
-    response.headers.set(
-      "Cache-Control",
-      "no-store, no-cache, must-revalidate, proxy-revalidate"
-    );
+  if (pathname.startsWith("/_next/")) return true;
+  if (pathname.startsWith("/favicon")) return true;
+  if (pathname.startsWith("/images/")) return true;
+  if (pathname.startsWith("/icons/")) return true;
+  if (pathname.startsWith("/sounds/")) return true;
+  if (pathname.startsWith("/videos/")) return true;
+  if (pathname.startsWith("/avatars/")) return true;
+  if (pathname.match(/\.(png|jpg|jpeg|webp|gif|svg|ico|mp3|wav|mp4|webm)$/i)) {
+    return true;
   }
 
-  return response;
+  return false;
+}
+
+export async function proxy(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
+  }
+
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const isValid = await verifySessionToken(token);
+
+  if (isValid) {
+    return NextResponse.next();
+  }
+
+  const loginUrl = new URL("/unlock", request.url);
+  loginUrl.searchParams.set("next", `${pathname}${search}`);
+
+  return NextResponse.redirect(loginUrl);
 }
 
 export const config = {
