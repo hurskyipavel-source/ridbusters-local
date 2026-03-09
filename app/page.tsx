@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { AVATARS } from "@/app/lib/avatars";
 import IntroVideo from "@/app/components/IntroVideo";
 
@@ -187,11 +186,11 @@ export default function HomePage() {
   const AMAZON_BOOK_URL =
     "https://www.amazon.com/Ridbusters-thrilling-underground-discoveries-RIDBUSTERSTM-ebook/dp/B0FMYVRF9G/ref=sr_1_1?crid=2M411B0518ZJF&dib=eyJ2IjoiMSJ9.UFL_RfpXJXD-b9Xxy7H8uA.jBtnKKHtTeABCS0Mla4pPNFD8aea9UDZSlkQI9NYj9U&dib_tag=se&keywords=ridbusters&qid=1772819809&sprefix=rodbusters%2Caps%2C281&sr=8-1";
 
-  const search = useSearchParams();
-
   const avatars = useMemo(() => Object.values(AVATARS), []);
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<ViewState>("landing");
+  const [qp, setQp] = useState("");
+  const [from, setFrom] = useState("");
 
   const rootRef = useRef<HTMLElement | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -278,15 +277,19 @@ export default function HomePage() {
   }, []);
 
   const items = useMemo(() => {
-    const firstThree = avatars.slice(0, 3).map((a) => ({ kind: "avatar" as const, a }));
+    const firstThree = avatars
+      .slice(0, 3)
+      .map((a) => ({ kind: "avatar" as const, a }));
     const book = { kind: "book" as const };
     return [...firstThree, book];
   }, [avatars]);
 
-  const qp = (search?.get("v") || "").toLowerCase();
-  const from = (search?.get("from") || "").toLowerCase();
   const forceAvatars = from === "chat" || qp === "avatars";
-  const effectiveView: ViewState = forceAvatars ? "avatars" : locked ? "landing" : view;
+  const effectiveView: ViewState = forceAvatars
+    ? "avatars"
+    : locked
+      ? "landing"
+      : view;
 
   const computeDeltas = () => {
     const deck = deckRef.current;
@@ -319,7 +322,9 @@ export default function HomePage() {
     const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
     if (mq?.matches) return;
 
-    const vids = Object.values(hoverVideoRefs.current).filter(Boolean) as HTMLVideoElement[];
+    const vids = Object.values(hoverVideoRefs.current).filter(
+      Boolean
+    ) as HTMLVideoElement[];
 
     for (const v of vids) {
       try {
@@ -335,6 +340,17 @@ export default function HomePage() {
 
   useEffect(() => {
     uiSfxRef.current = createSfx();
+  }, []);
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      setQp((params.get("v") || "").toLowerCase());
+      setFrom((params.get("from") || "").toLowerCase());
+    } catch {
+      setQp("");
+      setFrom("");
+    }
   }, []);
 
   useEffect(() => {
@@ -530,7 +546,9 @@ export default function HomePage() {
 
     sfxRef.current = createSfx();
 
-    setCards(Array.from({ length: totalCards }, () => ({ dealt: false, flipped: false })));
+    setCards(
+      Array.from({ length: totalCards }, () => ({ dealt: false, flipped: false }))
+    );
     setAnimReady(false);
     setAnimRunning(false);
 
@@ -543,7 +561,12 @@ export default function HomePage() {
       }, 200);
 
       if (reduce) {
-        setCards(Array.from({ length: totalCards }, () => ({ dealt: true, flipped: true })));
+        setCards(
+          Array.from({ length: totalCards }, () => ({
+            dealt: true,
+            flipped: true,
+          }))
+        );
         return;
       }
 
@@ -639,7 +662,10 @@ export default function HomePage() {
   const activeIndex = Math.min(code.length, CODE_LEN - 1);
 
   return (
-    <main ref={rootRef} className="relative min-h-screen overflow-hidden bg-black text-white">
+    <main
+      ref={rootRef}
+      className="relative min-h-screen overflow-hidden bg-black text-white"
+    >
       <video
         ref={introWarmRef}
         className="rbIntroWarm"
@@ -651,7 +677,10 @@ export default function HomePage() {
       />
 
       <div className="absolute inset-0">
-        <div className="absolute inset-0 rbBackdrop" style={{ backgroundImage: `url(${HERO_SRC})` }} />
+        <div
+          className="absolute inset-0 rbBackdrop"
+          style={{ backgroundImage: `url(${HERO_SRC})` }}
+        />
         <div className="absolute inset-0 rbBackdropTint" />
       </div>
 
@@ -679,24 +708,45 @@ export default function HomePage() {
         ))}
       </div>
 
-      {effectiveView === "intro" ? <IntroVideo videoSrc={INTRO_SRC} onDone={finishIntro} /> : null}
+      {effectiveView === "intro" ? (
+        <IntroVideo videoSrc={INTRO_SRC} onDone={finishIntro} />
+      ) : null}
 
       {effectiveView === "landing" ? (
         <div className="relative z-10 h-screen w-screen">
-          <div className="rbHero rbHeroBase" style={{ backgroundImage: `url(${HERO_SRC})` }} />
-          <div className="rbHero rbHeroLights" style={{ backgroundImage: `url(${HERO_LIGHTS})` }} />
-          <div className="rbHero rbHeroLights rbHeroLightsHot" style={{ backgroundImage: `url(${HERO_LIGHTS})` }} />
+          <div
+            className="rbHero rbHeroBase"
+            style={{ backgroundImage: `url(${HERO_SRC})` }}
+          />
+          <div
+            className="rbHero rbHeroLights"
+            style={{ backgroundImage: `url(${HERO_LIGHTS})` }}
+          />
+          <div
+            className="rbHero rbHeroLights rbHeroLightsHot"
+            style={{ backgroundImage: `url(${HERO_LIGHTS})` }}
+          />
           <div className="rbOverlay" />
 
           {!locked ? (
-            <button type="button" onClick={startIntro} className="rbWelcomeBtn" aria-label="Welcome">
+            <button
+              type="button"
+              onClick={startIntro}
+              className="rbWelcomeBtn"
+              aria-label="Welcome"
+            >
               <span className="rbWelcomeText">Welcome</span>
               <span className="rbWelcomeShine" aria-hidden="true" />
             </button>
           ) : null}
 
           {locked && !forceAvatars ? (
-            <div className="rbLockLayer" role="dialog" aria-modal="true" onPointerDown={focusHidden}>
+            <div
+              className="rbLockLayer"
+              role="dialog"
+              aria-modal="true"
+              onPointerDown={focusHidden}
+            >
               <div className="rbLockCard" onPointerDown={focusHidden}>
                 <div className="rbLockTop">
                   <div className="rbLockIcon" aria-hidden="true">
@@ -802,7 +852,9 @@ export default function HomePage() {
                           />
                           <div>
                             <div className="text-base font-semibold">{it.a.name}</div>
-                            <div className="text-xs text-neutral-400">{it.a.tagline ?? it.a.id}</div>
+                            <div className="text-xs text-neutral-400">
+                              {it.a.tagline ?? it.a.id}
+                            </div>
                           </div>
                         </div>
 
@@ -823,13 +875,21 @@ export default function HomePage() {
                             preload="auto"
                             poster={it.a.imageSrc}
                           />
-                          <img src={it.a.imageSrc} alt={it.a.name} className="rbHoverPoster" />
+                          <img
+                            src={it.a.imageSrc}
+                            alt={it.a.name}
+                            className="rbHoverPoster"
+                          />
                         </div>
 
-                        <p className="mt-4 text-sm text-neutral-300">{it.a.description}</p>
+                        <p className="mt-4 text-sm text-neutral-300">
+                          {it.a.description}
+                        </p>
 
                         <div className="mt-auto flex items-center justify-between pt-5">
-                          <span className="text-xs text-neutral-500">Click to chat →</span>
+                          <span className="text-xs text-neutral-500">
+                            Click to chat →
+                          </span>
                           <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-neutral-200 ring-1 ring-white/10">
                             Local AI
                           </span>
@@ -852,7 +912,9 @@ export default function HomePage() {
                           />
                           <div>
                             <div className="text-base font-semibold">Ridbusters Book</div>
-                            <div className="text-xs text-neutral-400">Official story, original adventure.</div>
+                            <div className="text-xs text-neutral-400">
+                              Official story, original adventure.
+                            </div>
                           </div>
                         </div>
 
@@ -903,7 +965,10 @@ export default function HomePage() {
                   : { className: "group block" };
 
               return (
-                <Container key={it.kind === "avatar" ? it.a.id : "book"} {...containerProps}>
+                <Container
+                  key={it.kind === "avatar" ? it.a.id : "book"}
+                  {...containerProps}
+                >
                   <div
                     ref={(n) => {
                       cardRefs.current[i] = n;
