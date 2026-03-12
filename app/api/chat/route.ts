@@ -34,7 +34,7 @@ type RateEntry = {
   resetAt: number
 }
 
-const OPENAI_MODEL = (process.env.OPENAI_MODEL || "gpt-5-chat-latest").trim()
+const OPENAI_MODEL = (process.env.OPENAI_MODEL || "gpt-5-mini").trim()
 const OPENAI_API_KEY = (process.env.OPENAI_API_KEY || "").trim()
 const APP_BASE_URL = (process.env.APP_BASE_URL || "").trim()
 
