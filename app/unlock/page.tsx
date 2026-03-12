@@ -122,9 +122,11 @@ export default function UnlockPage() {
   const activeIndex = Math.min(code.length, CODE_LEN - 1);
 
   const focusHidden = () => {
-    try {
-      hiddenInputRef.current?.focus?.();
-    } catch {}
+    window.setTimeout(() => {
+      try {
+        hiddenInputRef.current?.focus();
+      } catch {}
+    }, 0);
   };
 
   const submitCode = async () => {
@@ -148,21 +150,19 @@ export default function UnlockPage() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.ok) {
-  setCodeErr(
-    typeof data?.error === "string" ? data.error : "Wrong code"
-  );
-  setCode("");
-  setLoading(false);
-  window.setTimeout(() => focusHidden(), 0);
-  return;
-}
+        setCodeErr(typeof data?.error === "string" ? data.error : "Wrong code");
+        setCode("");
+        setLoading(false);
+        focusHidden();
+        return;
+      }
 
       window.location.href = nextUrl || "/";
     } catch {
       setCodeErr("Login failed");
       setCode("");
       setLoading(false);
-      window.setTimeout(() => focusHidden(), 0);
+      focusHidden();
     }
   };
 
@@ -233,7 +233,7 @@ export default function UnlockPage() {
       window.clearTimeout(t);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [loading, code, nextUrl]);
+  }, [loading, nextUrl]);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -543,7 +543,7 @@ export default function UnlockPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 24px;
+          padding: 18px;
           background: rgba(0, 0, 0, 0.55);
           backdrop-filter: blur(6px);
         }
@@ -733,6 +733,37 @@ export default function UnlockPage() {
         .rbEnterBtn:disabled {
           opacity: 0.65;
           cursor: not-allowed;
+        }
+
+        @media (max-width: 640px) {
+          .rbSignature {
+            right: 14px;
+            bottom: 12px;
+            font-size: 14px;
+          }
+
+          .rbLockCard {
+            width: min(520px, 94vw);
+            border-radius: 24px;
+            padding: 18px 16px 16px;
+          }
+
+          .rbLockTitle {
+            font-size: 20px;
+          }
+
+          .rbLockSub {
+            font-size: 11px;
+          }
+
+          .rbCodeRow {
+            gap: 8px;
+          }
+
+          .rbCodeCell {
+            height: 48px;
+            font-size: 16px;
+          }
         }
 
         @media (prefers-reduced-motion: reduce) {

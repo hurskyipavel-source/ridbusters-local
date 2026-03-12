@@ -16,6 +16,7 @@ export default function IntroVideo({ videoSrc, onDone }: Props) {
   const finishedRef = useRef(false);
   const startedRef = useRef(false);
   const doneTimerRef = useRef<number | null>(null);
+  const pausedByVisibilityRef = useRef(false);
 
   const finish = () => {
     if (finishedRef.current) return;
@@ -29,6 +30,7 @@ export default function IntroVideo({ videoSrc, onDone }: Props) {
       try {
         v.pause();
       } catch {}
+
       try {
         if (Number.isFinite(v.duration) && v.duration > 0) {
           v.currentTime = Math.max(0, v.duration - 0.05);
@@ -36,19 +38,49 @@ export default function IntroVideo({ videoSrc, onDone }: Props) {
       } catch {}
     }
 
-    if (doneTimerRef.current) window.clearTimeout(doneTimerRef.current);
+    if (doneTimerRef.current) {
+      window.clearTimeout(doneTimerRef.current);
+    }
+
     doneTimerRef.current = window.setTimeout(() => {
       onDone();
     }, 900);
+  };
+
+  const tryStart = async (manual = false) => {
+    const v = videoRef.current;
+    if (!v || finishedRef.current) return;
+
+    try {
+      v.playsInline = true;
+      v.preload = "auto";
+
+      if (manual) {
+        v.muted = false;
+        v.volume = 1;
+      }
+
+      const playPromise = v.play();
+
+      if (playPromise && typeof (playPromise as any).catch === "function") {
+        await playPromise;
+      }
+
+      setNeedManualPlay(false);
+    } catch {
+      if (!manual) {
+        setNeedManualPlay(true);
+      }
+    }
   };
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") finish();
     };
+
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -61,7 +93,7 @@ export default function IntroVideo({ videoSrc, onDone }: Props) {
       v.load();
     } catch {}
 
-    const tryPlay = () => {
+    const start = async () => {
       if (startedRef.current) return;
       startedRef.current = true;
 
@@ -71,43 +103,63 @@ export default function IntroVideo({ videoSrc, onDone }: Props) {
 
       try {
         v.muted = false;
-        v.volume = 1.0;
+        v.volume = 1;
+      } catch {}
 
-        const p = v.play();
-        if (p && typeof (p as any).catch === "function") {
-          (p as any).catch(() => setNeedManualPlay(true));
-        }
-      } catch {
-        setNeedManualPlay(true);
-      }
+      await tryStart(false);
 
       window.setTimeout(() => {
         const vv = videoRef.current;
-        if (!vv) return;
-        if (!finishedRef.current && vv.paused) setNeedManualPlay(true);
+        if (!vv || finishedRef.current) return;
+
+        if (vv.paused) {
+          setNeedManualPlay(true);
+        }
       }, 550);
     };
 
-    window.setTimeout(tryPlay, 0);
+    const t = window.setTimeout(() => {
+      start();
+    }, 0);
 
     return () => {
+      window.clearTimeout(t);
       if (doneTimerRef.current) window.clearTimeout(doneTimerRef.current);
     };
   }, []);
 
-  const manualPlay = () => {
-    setNeedManualPlay(false);
-    const v = videoRef.current;
-    if (!v) return;
+  useEffect(() => {
+    const onVisibilityChange = async () => {
+      const v = videoRef.current;
+      if (!v || finishedRef.current) return;
 
-    try {
-      const p = v.play();
-      if (p && typeof (p as any).catch === "function") {
-        (p as any).catch(() => setNeedManualPlay(true));
+      if (document.hidden) {
+        try {
+          if (!v.paused) {
+            pausedByVisibilityRef.current = true;
+            v.pause();
+          }
+        } catch {}
+        return;
       }
-    } catch {
-      setNeedManualPlay(true);
-    }
+
+      if (pausedByVisibilityRef.current) {
+        pausedByVisibilityRef.current = false;
+        try {
+          await v.play();
+        } catch {}
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
+
+  const manualPlay = async () => {
+    setNeedManualPlay(false);
+    await tryStart(true);
   };
 
   return (
@@ -126,21 +178,26 @@ export default function IntroVideo({ videoSrc, onDone }: Props) {
           }}
         />
 
-        <div className="absolute inset-0 rbIntroVignette pointer-events-none" />
-        <div className="absolute inset-0 rbIntroGrain pointer-events-none" />
+        <div className="pointer-events-none absolute inset-0 rbIntroVignette" />
+        <div className="pointer-events-none absolute inset-0 rbIntroGrain" />
 
-        {/* SIGNATURE */}
         <div className="rbSignatureIntro">Powered by P. M. Hursky</div>
 
         {needManualPlay ? (
-          <div className="absolute inset-0 z-[96] flex items-center justify-center">
-            <button type="button" onClick={manualPlay} className="rbMiniPlay" aria-label="Play intro" title="Play">
+          <div className="absolute inset-0 z-[96] flex items-center justify-center px-4">
+            <button
+              type="button"
+              onClick={manualPlay}
+              className="rbMiniPlay"
+              aria-label="Play intro"
+              title="Play"
+            >
               ▶
             </button>
           </div>
         ) : null}
 
-        <div className="absolute right-4 top-4 z-[97]">
+        <div className="absolute right-3 top-3 z-[97] sm:right-4 sm:top-4">
           <button type="button" onClick={finish} className="rbSkipBtn">
             Skip
           </button>
@@ -167,13 +224,15 @@ export default function IntroVideo({ videoSrc, onDone }: Props) {
           padding: 8px 12px;
           font-size: 12px;
           color: rgba(255, 255, 255, 0.92);
-          background: rgba(255, 255, 255, 0.10);
+          background: rgba(255, 255, 255, 0.1);
           border: 1px solid rgba(255, 255, 255, 0.15);
           backdrop-filter: blur(10px);
           cursor: pointer;
-          transition: background 160ms ease, border-color 160ms ease;
+          transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
         }
+
         .rbSkipBtn:hover {
+          transform: translateY(-1px);
           background: rgba(255, 255, 255, 0.14);
           border-color: rgba(255, 255, 255, 0.22);
         }
@@ -195,6 +254,7 @@ export default function IntroVideo({ videoSrc, onDone }: Props) {
           cursor: pointer;
           transition: transform 180ms ease, background 180ms ease;
         }
+
         .rbMiniPlay:hover {
           transform: scale(1.03);
           background: rgba(0, 0, 0, 0.34);
@@ -203,7 +263,7 @@ export default function IntroVideo({ videoSrc, onDone }: Props) {
         .rbIntroVignette {
           background: radial-gradient(
             circle at center,
-            rgba(0, 0, 0, 0.10) 0%,
+            rgba(0, 0, 0, 0.1) 0%,
             rgba(0, 0, 0, 0.55) 70%,
             rgba(0, 0, 0, 0.84) 100%
           );
@@ -236,6 +296,20 @@ export default function IntroVideo({ videoSrc, onDone }: Props) {
             opacity: 0;
             transform: scale(1.07);
             filter: blur(6px);
+          }
+        }
+
+        @media (max-width: 640px) {
+          .rbSignatureIntro {
+            right: 14px;
+            bottom: 12px;
+            font-size: 14px;
+          }
+
+          .rbMiniPlay {
+            height: 64px;
+            width: 64px;
+            font-size: 20px;
           }
         }
 

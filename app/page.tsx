@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { AVATARS } from "@/app/lib/avatars";
 import IntroVideo from "@/app/components/IntroVideo";
@@ -39,7 +39,9 @@ function createSfx() {
   const getCtx = () => {
     if (ctx) return ctx;
     const AC = (window.AudioContext ||
-      (window as any).webkitAudioContext) as typeof AudioContext;
+      (window as Window & typeof globalThis & {
+        webkitAudioContext?: typeof AudioContext;
+      }).webkitAudioContext) as typeof AudioContext;
     ctx = new AC();
     return ctx;
   };
@@ -118,7 +120,52 @@ function createSfx() {
     osc.stop(t + 0.09);
   };
 
-  return { cardDeal, cardFlip };
+  const cardHover = () => {
+    const c = getCtx();
+    const t = c.currentTime;
+
+    const src = c.createBufferSource();
+    src.buffer = noiseBuffer(c, 0.035);
+
+    const hp = c.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.setValueAtTime(1600, t);
+
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.setValueAtTime(2400, t);
+    bp.Q.setValueAtTime(0.9, t);
+
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.08, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+
+    src.connect(hp);
+    hp.connect(bp);
+    bp.connect(g);
+    g.connect(c.destination);
+
+    const osc = c.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(980, t);
+
+    const g2 = c.createGain();
+    g2.gain.setValueAtTime(0.0001, t);
+    g2.gain.exponentialRampToValueAtTime(0.03, t + 0.008);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+
+    osc.connect(g2);
+    g2.connect(c.destination);
+
+    src.start(t);
+    src.stop(t + 0.045);
+
+    osc.start(t);
+    osc.stop(t + 0.035);
+  };
+
+  return { cardDeal, cardFlip, cardHover };
 }
 
 export default function HomePage() {
@@ -151,6 +198,7 @@ export default function HomePage() {
 
   const sfxRef = useRef<ReturnType<typeof createSfx> | null>(null);
   const hoverVideoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const hoverPlayedRef = useRef<Record<string, boolean>>({});
 
   const bokeh = useMemo<Bokeh[]>(() => {
     const arr: Bokeh[] = [];
@@ -352,6 +400,7 @@ export default function HomePage() {
     const reduce = mq?.matches;
 
     sfxRef.current = createSfx();
+    hoverPlayedRef.current = {};
 
     setCards(
       Array.from({ length: totalCards }, () => ({ dealt: false, flipped: false }))
@@ -445,7 +494,22 @@ export default function HomePage() {
     } catch {}
   }
 
+  const playHoverSfx = (key: string) => {
+    if (hoverPlayedRef.current[key]) return;
+    hoverPlayedRef.current[key] = true;
+
+    try {
+      sfxRef.current?.cardHover();
+    } catch {}
+  };
+
+  const resetHoverSfx = (key: string) => {
+    hoverPlayedRef.current[key] = false;
+  };
+
   const onHoverEnter = async (id: string) => {
+    playHoverSfx(id);
+
     const v = hoverVideoRefs.current[id];
     if (!v) return;
     try {
@@ -455,6 +519,8 @@ export default function HomePage() {
   };
 
   const onHoverLeave = (id: string) => {
+    resetHoverSfx(id);
+
     const v = hoverVideoRefs.current[id];
     if (!v) return;
     try {
@@ -468,7 +534,7 @@ export default function HomePage() {
   return (
     <main
       ref={rootRef}
-      className="relative min-h-screen overflow-hidden bg-black text-white"
+      className="relative min-h-screen overflow-x-hidden overflow-y-auto bg-black text-white"
     >
       <video
         ref={introWarmRef}
@@ -495,19 +561,21 @@ export default function HomePage() {
           <span
             key={p.id}
             className="rbBokeh"
-            style={{
-              left: p.left,
-              top: p.top,
-              width: `${p.size}px`,
-              height: `${p.size}px`,
-              opacity: p.opacity,
-              filter: `blur(${p.blur}px)`,
-              animationDuration: `${p.dur}s`,
-              animationDelay: `${p.delay}s`,
-              transform: `translate(-50%, -50%)`,
-              ["--dx" as any]: `${p.driftX}px`,
-              ["--dy" as any]: `${p.driftY}px`,
-            }}
+            style={
+              {
+                left: p.left,
+                top: p.top,
+                width: `${p.size}px`,
+                height: `${p.size}px`,
+                opacity: p.opacity,
+                filter: `blur(${p.blur}px)`,
+                animationDuration: `${p.dur}s`,
+                animationDelay: `${p.delay}s`,
+                transform: "translate(-50%, -50%)",
+                "--dx": `${p.driftX}px`,
+                "--dy": `${p.driftY}px`,
+              } as CSSProperties
+            }
           />
         ))}
       </div>
@@ -545,12 +613,12 @@ export default function HomePage() {
       ) : null}
 
       {effectiveView === "avatars" ? (
-        <div className="relative z-10 mx-auto max-w-7xl px-6 py-10">
+        <div className="relative z-10 mx-auto w-full max-w-[1680px] px-4 py-8 sm:px-6 lg:px-8 xl:px-10">
           <div className="relative mb-6 h-0">
             <div ref={deckRef} className="rbDeckAnchor" aria-hidden="true" />
           </div>
 
-          <section className="mt-2 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <section className="mt-2 grid items-start grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4 xl:gap-7">
             {items.map((it, i) => {
               const state = cards[i] ?? { dealt: false, flipped: false };
               const isDealt = state.dealt;
@@ -576,11 +644,11 @@ export default function HomePage() {
               const cardFront =
                 it.kind === "avatar" ? (
                   <div className="rbCardFace rbFront">
-                    <div className="rbCardShell relative h-full overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-900/45 p-5 transition hover:border-neutral-700 hover:bg-neutral-900/65">
+                    <div className="rbCardShell relative overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-900/45 p-4 sm:p-5">
                       <span className="rbCardSheen" aria-hidden="true" />
                       <span className="rbCardGlow" aria-hidden="true" />
 
-                      <div className="relative flex h-full flex-col">
+                      <div className="relative flex flex-col">
                         <div className="flex items-center gap-3">
                           <img
                             src={it.a.avatarSrc}
@@ -595,11 +663,7 @@ export default function HomePage() {
                           </div>
                         </div>
 
-                        <div
-                          className="rbMediaBox mt-4 overflow-hidden rounded-2xl ring-1 ring-white/10"
-                          onMouseEnter={() => onHoverEnter(it.a.id)}
-                          onMouseLeave={() => onHoverLeave(it.a.id)}
-                        >
+                        <div className="rbMediaBox mt-4 overflow-hidden rounded-2xl ring-1 ring-white/10">
                           <video
                             ref={(n) => {
                               hoverVideoRefs.current[it.a.id] = n;
@@ -619,28 +683,22 @@ export default function HomePage() {
                           />
                         </div>
 
-                        <p className="mt-4 text-sm text-neutral-300">
-                          {it.a.description}
-                        </p>
-
-                        <div className="mt-auto flex items-center justify-between pt-5">
-                          <span className="text-xs text-neutral-500">
-                            Click to chat →
-                          </span>
-                          <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-neutral-200 ring-1 ring-white/10">
-                            Local AI
-                          </span>
+                        <div className="mt-5">
+                          <div className="rbChatBtn">
+                            <span className="rbChatBtnText">Click to CHAT</span>
+                            <span className="rbChatBtnGlow" aria-hidden="true" />
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
                 ) : (
                   <div className="rbCardFace rbFront">
-                    <div className="rbCardShell relative h-full overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-900/45 p-5 transition hover:border-neutral-700 hover:bg-neutral-900/65">
+                    <div className="rbCardShell relative overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-900/45 p-4 sm:p-5">
                       <span className="rbCardSheen" aria-hidden="true" />
                       <span className="rbCardGlow" aria-hidden="true" />
 
-                      <div className="relative flex h-full flex-col">
+                      <div className="relative flex flex-col">
                         <div className="flex items-center gap-3">
                           <img
                             src={BOOK_COVER_SRC}
@@ -655,7 +713,7 @@ export default function HomePage() {
                           </div>
                         </div>
 
-                        <div className="rbMediaBox rbBookMediaBox mt-4 overflow-hidden rounded-2xl ring-1 ring-white/10">
+                        <div className="rbMediaBox mt-4 overflow-hidden rounded-2xl ring-1 ring-white/10">
                           <img
                             src={BOOK_COVER_SRC}
                             alt="Ridbusters: Mission London book cover"
@@ -664,11 +722,7 @@ export default function HomePage() {
                           <div className="rbBookOverlay" />
                         </div>
 
-                        <p className="mt-4 text-sm text-neutral-300 rbBookTextBlock">
-                          Read the original story on Amazon.
-                        </p>
-
-                        <div className="mt-auto pt-3">
+                        <div className="mt-5">
                           <a
                             href={AMAZON_BOOK_URL}
                             target="_blank"
@@ -684,43 +738,57 @@ export default function HomePage() {
                   </div>
                 );
 
-              const Container: any = it.kind === "avatar" ? Link : "div";
+              const hoverKey = it.kind === "avatar" ? it.a.id : "book";
 
-              const containerProps =
-                it.kind === "avatar"
-                  ? {
-                      href: `/chat/${it.a.id}`,
-                      className: "group block",
-                      onClick: () => {
-                        try {
-                          sessionStorage.setItem("ridbusters.skipIntroOnce", "1");
-                          sessionStorage.setItem("ridbusters.lastView", "avatars");
-                        } catch {}
-                      },
-                    }
-                  : { className: "group block" };
+              const wrapStyle = {
+                "--stack": `${(totalCards - 1 - i) * 2}px`,
+                "--rot": `${(i - 1.5) * 2.2}deg`,
+              } as CSSProperties;
+
+              const cardBody = (
+                <div
+                  ref={(n) => {
+                    cardRefs.current[i] = n;
+                  }}
+                  className={wrapClass}
+                  style={wrapStyle}
+                >
+                  <div className={innerClass}>
+                    {cardFront}
+                    {commonBack}
+                  </div>
+                </div>
+              );
+
+              if (it.kind === "avatar") {
+                return (
+                  <Link
+                    key={it.a.id}
+                    href={`/chat/${it.a.id}`}
+                    className="group block h-full"
+                    onClick={() => {
+                      try {
+                        sessionStorage.setItem("ridbusters.skipIntroOnce", "1");
+                        sessionStorage.setItem("ridbusters.lastView", "avatars");
+                      } catch {}
+                    }}
+                    onMouseEnter={() => onHoverEnter(it.a.id)}
+                    onMouseLeave={() => onHoverLeave(it.a.id)}
+                  >
+                    {cardBody}
+                  </Link>
+                );
+              }
 
               return (
-                <Container
-                  key={it.kind === "avatar" ? it.a.id : "book"}
-                  {...containerProps}
+                <div
+                  key="book"
+                  className="group block h-full"
+                  onMouseEnter={() => playHoverSfx(hoverKey)}
+                  onMouseLeave={() => resetHoverSfx(hoverKey)}
                 >
-                  <div
-                    ref={(n) => {
-                      cardRefs.current[i] = n;
-                    }}
-                    className={wrapClass}
-                    style={{
-                      ["--stack" as any]: `${(totalCards - 1 - i) * 2}px`,
-                      ["--rot" as any]: `${(i - 1.5) * 2.2}deg`,
-                    }}
-                  >
-                    <div className={innerClass}>
-                      {cardFront}
-                      {commonBack}
-                    </div>
-                  </div>
-                </Container>
+                  {cardBody}
+                </div>
               );
             })}
           </section>
@@ -969,7 +1037,8 @@ export default function HomePage() {
 
         .rbDealWrap {
           width: 100%;
-          aspect-ratio: 3 / 4;
+          max-width: 350px;
+          min-height: 0;
           border-radius: 24px;
           perspective: 1200px;
           -webkit-perspective: 1200px;
@@ -977,6 +1046,7 @@ export default function HomePage() {
           transform: translate3d(0px, 0px, 0px);
           filter: blur(0px);
           will-change: transform, opacity, filter;
+          margin-inline: auto;
         }
 
         .rbDealWrap.rbReady:not(.rbDealt) {
@@ -1001,8 +1071,8 @@ export default function HomePage() {
 
         .rbFlipInner {
           position: relative;
+          display: grid;
           width: 100%;
-          height: 100%;
           transform-style: preserve-3d;
           -webkit-transform-style: preserve-3d;
           transform: rotateX(180deg);
@@ -1015,20 +1085,25 @@ export default function HomePage() {
         }
 
         .rbCardFace {
-          position: absolute;
-          inset: 0;
+          grid-area: 1 / 1;
+          position: relative;
           border-radius: 24px;
           overflow: hidden;
           backface-visibility: hidden;
           -webkit-backface-visibility: hidden;
+          min-width: 0;
+          align-self: stretch;
         }
 
         .rbFront {
           transform: rotateX(0deg);
+          z-index: 2;
         }
 
         .rbBack {
           transform: rotateX(180deg);
+          z-index: 1;
+          min-height: 100%;
         }
 
         .rbBack {
@@ -1099,14 +1174,16 @@ export default function HomePage() {
         }
 
         .rbCardShell {
-          height: 100%;
-          transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease, background 220ms ease;
+          transition: box-shadow 220ms ease, border-color 220ms ease, background 220ms ease,
+            transform 220ms ease;
         }
 
         .group:hover .rbCardShell {
-          transform: translateY(-6px) scale(1.012);
+          transform: translateY(-4px);
           box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42),
             0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+          border-color: rgba(255, 255, 255, 0.12);
+          background: rgba(23, 23, 26, 0.7);
         }
 
         .rbCardSheen {
@@ -1164,12 +1241,14 @@ export default function HomePage() {
 
         .rbMediaBox {
           position: relative;
-          height: 224px;
+          width: 100%;
+          aspect-ratio: 1 / 1;
           flex-shrink: 0;
-        }
-
-        .rbBookMediaBox {
-          height: 172px;
+          background: linear-gradient(
+            180deg,
+            rgba(20, 24, 32, 0.96) 0%,
+            rgba(10, 12, 18, 0.98) 100%
+          );
         }
 
         .rbHoverVideo,
@@ -1179,36 +1258,40 @@ export default function HomePage() {
           inset: 0;
           width: 100%;
           height: 100%;
-          object-fit: cover;
           transition: opacity 260ms ease, transform 260ms ease;
         }
 
         .rbHoverVideo {
           opacity: 0;
-          object-position: top;
+          object-fit: cover;
+          object-position: center top;
         }
 
         .rbHoverPoster {
           opacity: 1;
-          object-position: top;
-        }
-
-        .rbBookPoster {
-          opacity: 1;
+          object-fit: cover;
           object-position: center top;
-          transform: scale(1.01);
         }
 
         .group:hover .rbHoverVideo {
           opacity: 1;
+          transform: scale(1.02);
         }
 
         .group:hover .rbHoverPoster {
           opacity: 0;
+          transform: scale(1.01);
+        }
+
+        .rbBookPoster {
+          opacity: 1;
+          object-fit: cover;
+          object-position: center;
+          transform: scale(1);
         }
 
         .group:hover .rbBookPoster {
-          transform: scale(1.04);
+          transform: scale(1.03);
         }
 
         .rbBookOverlay {
@@ -1223,11 +1306,8 @@ export default function HomePage() {
           pointer-events: none;
         }
 
-        .rbBookTextBlock {
-          min-height: 44px;
-        }
-
-        .rbBuyBtnGold {
+        .rbBuyBtnGold,
+        .rbChatBtn {
           position: relative;
           display: flex;
           width: 100%;
@@ -1236,7 +1316,11 @@ export default function HomePage() {
           overflow: hidden;
           border-radius: 16px;
           padding: 13px 16px;
+          min-height: 48px;
           text-decoration: none;
+        }
+
+        .rbBuyBtnGold {
           border: 1px solid rgba(255, 220, 140, 0.5);
           background: linear-gradient(
             180deg,
@@ -1247,14 +1331,10 @@ export default function HomePage() {
           box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34),
             0 0 0 1px rgba(255, 246, 210, 0.2) inset,
             0 0 24px rgba(255, 196, 72, 0.18);
-          transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
-          min-height: 48px;
-          visibility: visible;
-          opacity: 1;
+          transition: box-shadow 180ms ease, filter 180ms ease;
         }
 
         .rbBuyBtnGold:hover {
-          transform: translateY(-2px);
           box-shadow: 0 14px 34px rgba(0, 0, 0, 0.38),
             0 0 0 1px rgba(255, 246, 210, 0.26) inset,
             0 0 32px rgba(255, 196, 72, 0.26);
@@ -1288,6 +1368,54 @@ export default function HomePage() {
           pointer-events: none;
         }
 
+        .rbChatBtn {
+          border: 1px solid rgba(98, 241, 227, 0.52);
+          background: linear-gradient(
+            180deg,
+            rgba(118, 250, 233, 0.98) 0%,
+            rgba(39, 208, 203, 0.98) 42%,
+            rgba(23, 132, 157, 0.98) 100%
+          );
+          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34),
+            0 0 0 1px rgba(215, 255, 250, 0.18) inset,
+            0 0 24px rgba(56, 225, 214, 0.2);
+          transition: box-shadow 180ms ease, filter 180ms ease;
+        }
+
+        .group:hover .rbChatBtn {
+          box-shadow: 0 14px 34px rgba(0, 0, 0, 0.38),
+            0 0 0 1px rgba(225, 255, 252, 0.24) inset,
+            0 0 30px rgba(56, 225, 214, 0.28);
+          filter: saturate(1.08) brightness(1.03);
+        }
+
+        .rbChatBtnText {
+          position: relative;
+          z-index: 2;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          color: #042b32;
+          text-shadow: 0 1px 0 rgba(224, 255, 252, 0.42);
+        }
+
+        .rbChatBtnGlow {
+          position: absolute;
+          inset: -20% -30%;
+          background: linear-gradient(
+            115deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0) 36%,
+            rgba(236, 255, 254, 0.42) 49%,
+            rgba(255, 255, 255, 0) 62%,
+            transparent 100%
+          );
+          transform: translateX(-55%);
+          animation: rbCyanSweep 3s ease-in-out infinite;
+          pointer-events: none;
+        }
+
         @keyframes rbGoldSweep {
           0% {
             transform: translateX(-55%);
@@ -1300,12 +1428,64 @@ export default function HomePage() {
           }
         }
 
+        @keyframes rbCyanSweep {
+          0% {
+            transform: translateX(-55%);
+          }
+          50% {
+            transform: translateX(8%);
+          }
+          100% {
+            transform: translateX(62%);
+          }
+        }
+
+        @media (max-width: 1535px) {
+          .rbDealWrap {
+            max-width: 336px;
+          }
+        }
+
+        @media (max-width: 1279px) {
+          .rbDealWrap {
+            max-width: 360px;
+          }
+        }
+
+        @media (max-width: 1023px) {
+          .rbDealWrap {
+            max-width: 390px;
+          }
+        }
+
+        @media (max-width: 639px) {
+          .rbSignature {
+            right: 14px;
+            bottom: 12px;
+            font-size: 15px;
+          }
+
+          .rbWelcomeBtn {
+            min-width: calc(100vw - 32px);
+            padding: 12px 24px;
+          }
+
+          .rbWelcomeText {
+            font-size: clamp(26px, 8vw, 38px);
+          }
+
+          .rbDealWrap {
+            max-width: 420px;
+          }
+        }
+
         @media (prefers-reduced-motion: reduce) {
           .rbBokeh,
           .rbHeroLights,
           .rbHeroLightsHot,
           .rbWelcomeShine,
-          .rbBuyBtnGoldGlow {
+          .rbBuyBtnGoldGlow,
+          .rbChatBtnGlow {
             animation: none !important;
           }
 
@@ -1324,7 +1504,9 @@ export default function HomePage() {
             transition: none !important;
           }
 
-          .rbBookPoster {
+          .rbBookPoster,
+          .rbHoverVideo,
+          .rbHoverPoster {
             transform: none !important;
           }
         }

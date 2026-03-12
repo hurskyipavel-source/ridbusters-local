@@ -7,20 +7,26 @@ const PUBLIC_PATHS = [
   "/api/auth/logout",
 ];
 
+const PUBLIC_PREFIXES = [
+  "/_next/",
+  "/images/",
+  "/icons/",
+  "/sounds/",
+  "/videos/",
+  "/avatars/",
+];
+
+function isStaticAsset(pathname: string) {
+  return /\.(png|jpg|jpeg|webp|gif|svg|ico|mp3|wav|mp4|webm|txt|xml|json)$/i.test(
+    pathname
+  );
+}
+
 function isPublicPath(pathname: string) {
   if (PUBLIC_PATHS.includes(pathname)) return true;
-
-  if (pathname.startsWith("/_next/")) return true;
-  if (pathname.startsWith("/favicon")) return true;
-  if (pathname.startsWith("/images/")) return true;
-  if (pathname.startsWith("/icons/")) return true;
-  if (pathname.startsWith("/sounds/")) return true;
-  if (pathname.startsWith("/videos/")) return true;
-  if (pathname.startsWith("/avatars/")) return true;
-  if (pathname.match(/\.(png|jpg|jpeg|webp|gif|svg|ico|mp3|wav|mp4|webm)$/i)) {
-    return true;
-  }
-
+  if (pathname === "/favicon.ico") return true;
+  if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return true;
+  if (isStaticAsset(pathname)) return true;
   return false;
 }
 

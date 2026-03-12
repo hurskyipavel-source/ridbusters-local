@@ -8,7 +8,7 @@ type SessionPayload = {
 };
 
 function getAuthSecret() {
-  const secret = process.env.AUTH_SECRET;
+  const secret = (process.env.AUTH_SECRET || "").trim();
   if (!secret) {
     throw new Error("AUTH_SECRET is not set");
   }
@@ -16,7 +16,7 @@ function getAuthSecret() {
 }
 
 function getAccessPassword() {
-  const password = process.env.ACCESS_PASSWORD;
+  const password = (process.env.ACCESS_PASSWORD || "").trim();
   if (!password) {
     throw new Error("ACCESS_PASSWORD is not set");
   }
@@ -29,7 +29,7 @@ async function importKey(secret: string) {
     encoder.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign", "verify"]
+    ["sign"]
   );
 }
 
@@ -37,6 +37,17 @@ function toHex(buffer: ArrayBuffer) {
   return Array.from(new Uint8Array(buffer))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function timingSafeEqual(a: string, b: string) {
+  if (a.length !== b.length) return false;
+
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+
+  return mismatch === 0;
 }
 
 async function signValue(value: string) {
@@ -57,20 +68,31 @@ export async function createSessionToken() {
 }
 
 export async function verifySessionToken(token: string | undefined) {
-  if (!token) return false;
+  if (!token || typeof token !== "string") return false;
 
   const dot = token.lastIndexOf(".");
-  if (dot <= 0) return false;
+  if (dot <= 0 || dot === token.length - 1) return false;
 
   const payloadString = token.slice(0, dot);
   const signature = token.slice(dot + 1);
 
-  const expectedSignature = await signValue(payloadString);
-  if (signature !== expectedSignature) return false;
+  if (!payloadString || !signature) return false;
+  if (!/^[0-9a-f]+$/i.test(signature)) return false;
 
   try {
-    const payload = JSON.parse(decodeURIComponent(payloadString)) as SessionPayload;
-    if (!payload?.exp) return false;
+    const expectedSignature = await signValue(payloadString);
+
+    if (!timingSafeEqual(signature, expectedSignature)) {
+      return false;
+    }
+
+    const payload = JSON.parse(
+      decodeURIComponent(payloadString)
+    ) as SessionPayload;
+
+    if (!payload || typeof payload.exp !== "number") {
+      return false;
+    }
 
     const now = Math.floor(Date.now() / 1000);
     return payload.exp > now;
@@ -84,5 +106,11 @@ export function getSessionMaxAge() {
 }
 
 export function isValidPassword(input: string) {
-  return input === getAccessPassword();
+  try {
+    const expected = getAccessPassword();
+    const normalizedInput = String(input || "").trim();
+    return timingSafeEqual(normalizedInput, expected);
+  } catch {
+    return false;
+  }
 }
