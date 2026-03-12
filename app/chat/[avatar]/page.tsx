@@ -7,6 +7,13 @@ import {
   buildConversationSummary,
   type Msg as MemoryMsg,
 } from "@/app/lib/ridbusters-memory";
+import TalkingAvatar from "@/app/components/TalkingAvatar";
+import {
+  nextAvatarState,
+  type AvatarState,
+} from "@/app/lib/ridbusters-avatar-state";
+import { speakText } from "@/app/lib/ridbusters-voice";
+import { formatForSpeech } from "@/app/lib/ridbusters-spoken";
 
 type Props = {
   params: Promise<{ avatar: string }>;
@@ -25,14 +32,7 @@ const GREETINGS: Record<AvatarId, string[]> = {
     "Hi, I’m Maya. Choose the language that feels natural to you, and we’ll go from there. What are you curious about?",
     "Hey. I’m Maya. We don’t have to stay in English if another language is easier for you. Where should we begin?",
     "Hi. Maya here. You can write in the language you prefer, and I’ll follow you. What do you want to uncover?",
-    "Hey, I’m Maya. If you want, start in any language that feels comfortable, and I’ll adapt. What’s on your mind?",
-    "Hi. I’m Maya. Pick the language that suits you best, and let’s start with something interesting.",
-    "Hey. Maya here. We can talk in English, Russian, Ukrainian, or Dutch. Which one do you prefer?",
-    "Hi, I’m Maya. Just write the way that feels natural to you, and I’ll answer in the same language. What should we start with?",
-    "Hey. I’m Maya. We can switch languages easily, so use the one that’s easiest for you. What do you want to know?",
-    "Hi. Maya here. I’m ready when you are, in whichever language you prefer. What question do you have first?",
-    "Hey, I’m Maya. Choose your language, and I’ll keep up. What part interests you most?",
-    "Hi. I’m Maya. We can do this your way, in the language that feels most comfortable. So, where do we begin?",
+    "Hey, I’m Maya. Start in any language that feels comfortable, and I’ll adapt. What’s on your mind?",
   ],
   ryan: [
     "Hi, I’m Ryan. We can talk in English, Russian, Ukrainian, or Dutch, whichever is easiest for you. What do you want to figure out?",
@@ -43,13 +43,6 @@ const GREETINGS: Record<AvatarId, string[]> = {
     "Hey. I’m Ryan. We can do this in the language that works best for you. What detail are we starting with?",
     "Hi, I’m Ryan. Choose any comfortable language and I’ll keep up. What part do you want to break down?",
     "Hey. Ryan here. We don’t need to stay in English if another language is better for you. What do you want to ask?",
-    "Hi. I’m Ryan. Whatever language gives you the clearest question is the right one. What’s bothering you?",
-    "Hey, I’m Ryan. English, Russian, Ukrainian, Dutch, all fine. Which one do you want to use?",
-    "Hi. Ryan here. Start in your preferred language, and I’ll respond the same way. What do we analyse first?",
-    "Hey. I’m Ryan. Pick the easiest language for you, and we’ll go step by step from there.",
-    "Hi, I’m Ryan. Use the language that feels most natural, and let’s start with one solid question.",
-    "Hey. Ryan here. You can switch languages if needed, I’ll adapt. What do you want to work out?",
-    "Hi. I’m Ryan. Choose the language you want, and then give me the clue, question, or detail that matters.",
   ],
   ella: [
     "Hey, I’m Ella. We can chat in English, Russian, Ukrainian, or Dutch, whatever is easiest for you. Which one do you like best?",
@@ -60,13 +53,6 @@ const GREETINGS: Record<AvatarId, string[]> = {
     "Hi! I’m Ella. English works, but Russian, Ukrainian, or Dutch work too. Which one should we use?",
     "Hey, I’m Ella. Start in your own language if you want, I’ll keep up. What do you want to uncover first?",
     "Hi! Ella here. Use whichever language feels the most natural, and let’s get into something fun or mysterious.",
-    "Hey! I’m Ella. We can switch languages easily, so choose the one you like. What’s your first question?",
-    "Hi, I’m Ella. Pick your language and I’ll answer in the same one. What do you want to know?",
-    "Hey! Ella here. You don’t have to stay in English, just use what’s comfortable for you. What are we diving into?",
-    "Hi! I’m Ella. Start however you like, in whatever language you like, and I’ll follow. Deal?",
-    "Hey, I’m Ella. I’m ready in English, Russian, Ukrainian, or Dutch. Which one feels best for you?",
-    "Hi! Ella here. Your language, your first question, your move. What’s it going to be?",
-    "Hey! I’m Ella. Choose the language you prefer and we’ll get started properly. What are you in the mood to ask?",
   ],
 };
 
@@ -77,7 +63,6 @@ const OFFLINE_REPLIES: Record<AvatarId, string[]> = {
     "Something on the line went quiet for a moment. Let’s pick this up later.",
     "Looks like the signal failed on us. Try me again soon.",
     "I can’t get a proper reply through right now. Let’s reconnect later.",
-    "Something interrupted the connection. Come back a little later and we’ll continue.",
   ],
   ryan: [
     "The connection failed just now. Best option is to try again a bit later.",
@@ -85,14 +70,12 @@ const OFFLINE_REPLIES: Record<AvatarId, string[]> = {
     "The signal didn’t get through properly. Try again in a little while.",
     "There’s a connection problem at the moment. We should continue later.",
     "I’m not getting a usable response through right now. Let’s try again soon.",
-    "Something stopped the reply from coming through. Best to reconnect later.",
   ],
   ella: [
     "Ah, great timing, the connection just died on us. Come back a bit later and we’ll keep going.",
     "Looks like the internet decided to be dramatic. Try me again soon.",
     "Something cut the connection off. Let’s talk again a little later.",
     "Well, that was rude. The reply didn’t come through. Come back soon.",
-    "The line just went weird on us. Let’s reconnect later and continue properly.",
     "Something broke the connection for a second there. Try again in a bit.",
   ],
 };
@@ -107,6 +90,7 @@ function summaryKey(avatarId: string) {
 
 function safeParseMessages(raw: string | null): Msg[] {
   if (!raw) return [];
+
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -133,6 +117,7 @@ function safeParseMessages(raw: string | null): Msg[] {
 
 function isSpeechRecognitionSupported() {
   if (typeof window === "undefined") return false;
+
   return Boolean(
     (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   );
@@ -182,8 +167,7 @@ function detectLangFromText(text: string): SpeechLang | null {
 
   if (dutchScore >= 3) return "nl-NL";
 
-  const latinLetters = /[a-z]/i.test(t);
-  if (latinLetters) return "en-US";
+  if (/[a-z]/i.test(t)) return "en-US";
 
   return null;
 }
@@ -195,6 +179,7 @@ function detectNavigatorLang(): SpeechLang {
     if (lang.startsWith("ru")) return "ru-RU";
     if (lang.startsWith("nl")) return "nl-NL";
   }
+
   return "en-US";
 }
 
@@ -228,11 +213,19 @@ function detectSpeechLangAuto(
     return recentLangs[0];
   }
 
-  if (recentLangs.includes("en-US")) return "en-US";
-  if (recentLangs.includes(navigatorLang)) return navigatorLang;
-  if (rememberedLang && recentLangs.includes(rememberedLang)) return rememberedLang;
+  if (rememberedLang && recentLangs.includes(rememberedLang)) {
+    return rememberedLang;
+  }
 
-  return "en-US";
+  if (recentLangs.includes(navigatorLang)) {
+    return navigatorLang;
+  }
+
+  if (recentLangs.includes("en-US")) {
+    return "en-US";
+  }
+
+  return recentLangs[0];
 }
 
 export default function ChatPage({ params }: Props) {
@@ -253,6 +246,8 @@ export default function ChatPage({ params }: Props) {
   const [speechError, setSpeechError] = useState<string | null>(null);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [avatarState, setAvatarState] = useState<AvatarState>("idle");
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -274,6 +269,7 @@ export default function ChatPage({ params }: Props) {
 
   const focusComposer = () => {
     if (typeof window === "undefined") return;
+
     window.setTimeout(() => {
       try {
         inputRef.current?.focus();
@@ -281,8 +277,20 @@ export default function ChatPage({ params }: Props) {
     }, 0);
   };
 
+  const stopCurrentAudio = () => {
+    try {
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+      }
+    } catch {}
+
+    setCurrentAudio(null);
+  };
+
   const goBack = () => {
     setBackFlags();
+    stopCurrentAudio();
     router.replace("/?v=avatars&from=chat");
   };
 
@@ -360,8 +368,9 @@ export default function ChatPage({ params }: Props) {
       try {
         recogRef.current?.stop?.();
       } catch {}
+      stopCurrentAudio();
     };
-  }, []);
+  }, [currentAudio]);
 
   if (!avatar) {
     return (
@@ -417,6 +426,8 @@ export default function ChatPage({ params }: Props) {
   function clearHistoryNow() {
     if (typeof window === "undefined") return;
 
+    stopCurrentAudio();
+
     window.localStorage.removeItem(storageKey(avatarId));
     window.localStorage.removeItem(summaryKey(avatarId));
 
@@ -428,6 +439,7 @@ export default function ChatPage({ params }: Props) {
     setMemorySummary("");
     setInput("");
     setSpeechError(null);
+    setAvatarState("idle");
 
     speakBufferRef.current = "";
     shouldSendAfterStopRef.current = true;
@@ -447,11 +459,46 @@ export default function ChatPage({ params }: Props) {
     return summary;
   }
 
-  async function sendText(textRaw: string) {
+  async function playAssistantVoice(reply: string) {
+    try {
+      const spoken = formatForSpeech(reply);
+      if (!spoken) return;
+
+      const audio = await speakText(spoken);
+      if (!audio) {
+        setSpeechError("Voice playback failed. Text reply is still available.");
+        setAvatarState((prev) => nextAvatarState(prev, "ERROR"));
+        return;
+      }
+
+      stopCurrentAudio();
+      setCurrentAudio(audio);
+      setAvatarState((prev) => nextAvatarState(prev, "AI_REPLY"));
+
+      audio.onended = () => {
+        setAvatarState((prev) => nextAvatarState(prev, "AUDIO_END"));
+        setCurrentAudio(null);
+      };
+
+      audio.onerror = () => {
+        setSpeechError("Voice playback failed. Text reply is still available.");
+        setAvatarState((prev) => nextAvatarState(prev, "ERROR"));
+        setCurrentAudio(null);
+      };
+
+      await audio.play();
+    } catch {
+      setSpeechError("Voice playback failed. Text reply is still available.");
+      setAvatarState((prev) => nextAvatarState(prev, "ERROR"));
+    }
+  }
+
+  async function sendText(textRaw: string, sourceMode: Mode = "write") {
     const text = textRaw.trim();
     if (!text || loading) return;
 
     setSpeechError(null);
+    stopCurrentAudio();
 
     const baseMessages = messagesRef.current;
     const newMessages: Msg[] = [...baseMessages, { role: "user", content: text }];
@@ -459,6 +506,7 @@ export default function ChatPage({ params }: Props) {
     setMessages(newMessages);
     messagesRef.current = newMessages;
     setLoading(true);
+    setAvatarState((prev) => nextAvatarState(prev, "USER_STOP"));
 
     const detected = detectLangFromText(text);
     if (detected) {
@@ -485,9 +533,11 @@ export default function ChatPage({ params }: Props) {
           ...newMessages,
           { role: "assistant", content: fallback },
         ];
+
         setMessages(finalMessages);
         messagesRef.current = finalMessages;
         buildNextSummary(finalMessages);
+        setAvatarState("error");
         return;
       }
 
@@ -501,18 +551,27 @@ export default function ChatPage({ params }: Props) {
         ...newMessages,
         { role: "assistant", content: reply },
       ];
+
       setMessages(finalMessages);
       messagesRef.current = finalMessages;
       buildNextSummary(finalMessages);
+
+      if (sourceMode === "speak") {
+        await playAssistantVoice(reply);
+      } else {
+        setAvatarState("idle");
+      }
     } catch {
       const fallback = pickOfflineReply(avatarId);
       const finalMessages: Msg[] = [
         ...newMessages,
         { role: "assistant", content: fallback },
       ];
+
       setMessages(finalMessages);
       messagesRef.current = finalMessages;
       buildNextSummary(finalMessages);
+      setAvatarState("error");
     } finally {
       setLoading(false);
       setMode("write");
@@ -522,9 +581,10 @@ export default function ChatPage({ params }: Props) {
 
   async function onWriteClick() {
     if (mode !== "write") setMode("write");
+
     const t = input;
     setInput("");
-    await sendText(t);
+    await sendText(t, "write");
   }
 
   function stopRecognition(manualStop = false) {
@@ -539,6 +599,7 @@ export default function ChatPage({ params }: Props) {
     if (manualStop) {
       setListening(false);
       setMode("write");
+      setAvatarState("idle");
       focusComposer();
     }
   }
@@ -554,11 +615,13 @@ export default function ChatPage({ params }: Props) {
       setSpeechSupported(false);
       setSpeechError("Speech input is not supported in this browser.");
       setMode("write");
+      setAvatarState("error");
       focusComposer();
       return;
     }
 
     setSpeechError(null);
+    stopCurrentAudio();
 
     if (!recogRef.current) {
       const r = new SR();
@@ -571,6 +634,7 @@ export default function ChatPage({ params }: Props) {
         speakBufferRef.current = "";
         shouldSendAfterStopRef.current = true;
         setListening(true);
+        setAvatarState((prev) => nextAvatarState(prev, "USER_START"));
       };
 
       r.onresult = (e: any) => {
@@ -612,6 +676,7 @@ export default function ChatPage({ params }: Props) {
         }
 
         setListening(false);
+        setAvatarState("error");
       };
 
       r.onend = async () => {
@@ -629,8 +694,9 @@ export default function ChatPage({ params }: Props) {
 
           setInput("");
           speakBufferRef.current = "";
-          await sendText(finalText);
+          await sendText(finalText, "speak");
         } else {
+          setAvatarState("idle");
           focusComposer();
         }
       };
@@ -653,6 +719,7 @@ export default function ChatPage({ params }: Props) {
       setSpeechError("Speech input could not start. Try again.");
       setListening(false);
       setMode("write");
+      setAvatarState("error");
       focusComposer();
     }
   }
@@ -660,6 +727,7 @@ export default function ChatPage({ params }: Props) {
   async function onSpeakClick() {
     if (!speechSupported) {
       setSpeechError("Speech input is supported in Chrome on HTTPS or localhost.");
+      setAvatarState("error");
       focusComposer();
       return;
     }
@@ -687,7 +755,7 @@ export default function ChatPage({ params }: Props) {
 
       <div className="rbSignature">Powered by P. M. Hursky</div>
 
-      <div className="relative z-10 mx-auto w-full max-w-5xl px-3 py-3 sm:px-4 sm:py-6">
+      <div className="relative z-10 mx-auto w-full max-w-7xl px-3 py-3 sm:px-4 sm:py-6">
         <header className="flex flex-col gap-3 rounded-3xl border border-white/8 bg-black/20 p-3 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:p-4">
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={goBack} className="rbBackBtn">
@@ -724,11 +792,30 @@ export default function ChatPage({ params }: Props) {
           </div>
         </header>
 
-        <div className="mt-3 sm:mt-5">
-          <section className="overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-900/30">
+        <div className="mt-3 grid gap-4 xl:mt-5 xl:grid-cols-[380px_minmax(0,1fr)] xl:gap-5">
+          <aside className="rounded-[28px] border border-white/10 bg-black/25 p-3 backdrop-blur-md">
+            <TalkingAvatar
+              avatarSrc={avatar.avatarSrc}
+              state={avatarState}
+              audio={currentAudio}
+            />
+
+            <div className="mt-3 rounded-3xl border border-white/10 bg-white/5 p-4">
+              <div className="text-sm font-semibold text-white/95">Avatar state</div>
+              <div className="mt-2 text-sm text-white/72">
+                {avatarState === "idle" && "Ready"}
+                {avatarState === "listening" && "Listening"}
+                {avatarState === "thinking" && "Thinking"}
+                {avatarState === "speaking" && "Speaking"}
+                {avatarState === "error" && "Connection or voice issue"}
+              </div>
+            </div>
+          </aside>
+
+          <section className="overflow-hidden rounded-[28px] border border-neutral-800 bg-neutral-900/30 backdrop-blur-md">
             <div
               ref={listRef}
-              className="h-[56svh] space-y-3 overflow-y-auto p-3 sm:h-[62svh] sm:p-4 md:h-[68vh] md:p-5"
+              className="h-[54svh] space-y-3 overflow-y-auto p-3 sm:h-[60svh] sm:p-4 md:h-[66vh] md:p-5 xl:h-[72vh]"
               onPointerDown={() => {
                 if (!listening && !loading) focusComposer();
               }}
@@ -747,10 +834,10 @@ export default function ChatPage({ params }: Props) {
                   }`}
                 >
                   <div
-                    className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed ring-1 sm:max-w-[85%] ${
+                    className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed ring-1 sm:max-w-[85%] ${
                       m.role === "user"
                         ? "bg-white text-neutral-950 ring-white/10"
-                        : "bg-neutral-950/40 text-neutral-100 ring-white/10"
+                        : "bg-neutral-950/45 text-neutral-100 ring-white/10"
                     }`}
                   >
                     <div className="whitespace-pre-wrap">{m.content}</div>
@@ -760,7 +847,7 @@ export default function ChatPage({ params }: Props) {
 
               {loading ? (
                 <div className="flex justify-start">
-                  <div className="rounded-2xl bg-neutral-950/40 px-4 py-3 text-sm text-neutral-300 ring-1 ring-white/10">
+                  <div className="rounded-2xl bg-neutral-950/45 px-4 py-3 text-sm text-neutral-300 ring-1 ring-white/10">
                     Thinking…
                   </div>
                 </div>
@@ -1067,7 +1154,7 @@ export default function ChatPage({ params }: Props) {
           border-color: rgba(255, 120, 120, 0.28);
         }
 
-        @media (max-width: 640px) {
+        @media (max-width: 1279px) {
           .rbSignature {
             right: 14px;
             bottom: 12px;
